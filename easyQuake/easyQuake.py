@@ -21,6 +21,7 @@ os.chmod(pathgpd+'/gpd_predict.py', st.st_mode | stat.S_IEXEC)
 os.chmod(pathEQT+'/mseed_predictor.py', st1.st_mode | stat.S_IEXEC)
 
 import os
+import time
 from obspy import UTCDateTime
 from obspy import Inventory, read_inventory
 from obspy.clients.fdsn import Client
@@ -152,17 +153,32 @@ def process_local_sac():
     print('Local sac files')
 
 
-                
-def build_tt_tables(lat1=None,long1=None,maxrad=None,starting=None, stopping=None, channel_codes=['EH','BH','HH','HN'],db=None,maxdist=500.,source_depth=5., delta_distance=1):
+# TODO: These three functions involve a lot of repetition and should be sanitised              
+def build_tt_tables(
+    lat1=None,
+    long1=None,
+    maxrad=None,
+    starting=None, 
+    stopping=None, 
+    channel_codes=['EH','BH','HH','HN'],
+    db=None,
+    maxdist=500.,
+    source_depth=5., 
+    delta_distance=1
+):
     """ 
     """
     # Create a connection to an sqlalchemy database
-    tt_engine=create_engine(db,echo=False, connect_args={'check_same_thread': False})
+    tt_engine = create_engine(
+        db, echo=False, connect_args={'check_same_thread': False})
     tt_stations_1D.BaseTT1D.metadata.create_all(tt_engine)
-    TTSession=sessionmaker(bind=tt_engine)
-    tt_session=TTSession()
-    fdsnclient=Client()
-    inv=fdsnclient.get_stations(starttime=starting,endtime=stopping,latitude=lat1,longitude=long1,maxradius=maxrad,channel='*HZ',level='channel')
+    TTSession = sessionmaker(bind=tt_engine)
+    tt_session = TTSession()
+    fdsnclient = Client()
+    inv = fdsnclient.get_stations(
+        starttime=starting, endtime=stopping, latitude=lat1,
+        longitude=long1, maxradius=maxrad, channel='*HZ',
+        level='channel')
     # Get inventory
     for net in inv:
         network=net.code
@@ -174,8 +190,12 @@ def build_tt_tables(lat1=None,long1=None,maxrad=None,starting=None, stopping=Non
                     if not ch.location_code in loccodes:
                       loccodes.append(ch.location_code)
             for loc in loccodes:
-                print(sta.code,network,loc,sta.latitude,sta.longitude,sta.elevation)
-                station=tt_stations_1D.Station1D(sta.code,network,loc,sta.latitude,sta.longitude,sta.elevation)
+                print(
+                    sta.code, network, loc, sta.latitude, sta.longitude,
+                    sta.elevation)
+                station = tt_stations_1D.Station1D(
+                    sta.code, network, loc, sta.latitude, sta.longitude,
+                    sta.elevation)
                 tt_session.add(station)
             tt_session.commit()
 
@@ -202,60 +222,84 @@ def build_tt_tables(lat1=None,long1=None,maxrad=None,starting=None, stopping=Non
     tt_session.close()
     return inv
 
-def build_tt_tables_local_directory(dirname=None,project_folder=None,channel_codes=['EH','BH','HH','HN'],db=None,maxdist=800.,source_depth=5.,delta_distance=1):
+def build_tt_tables_local_directory(
+    dirname,
+    project_folder,
+    db,
+    channel_codes=['EH','BH','HH','HN'],
+    maxdist=800.,
+    source_depth=5.,
+    delta_distance=1
+):
     """ 
     """
     # Create a connection to an sqlalchemy database
-    tt_engine=create_engine(db,echo=False, connect_args={'check_same_thread': False})
+    tt_engine = create_engine(
+        db, echo=False, connect_args={'check_same_thread': False})
     tt_stations_1D.BaseTT1D.metadata.create_all(tt_engine)
-    TTSession=sessionmaker(bind=tt_engine)
-    tt_session=TTSession()
+    TTSession = sessionmaker(bind=tt_engine)
+    tt_session = TTSession()
     inv = Inventory()
-    dir1a = glob.glob(project_folder+'/'+dirname+'/*xml')
+    dir1a = glob.glob(os.path.join(project_folder, dirname, '*xml'))
     for file1 in dir1a:
         inv1a = read_inventory(file1)
         inv.networks.extend(inv1a)
     for net in inv:
-        network=net.code
+        network = net.code
         for sta in net:
-            loccodes=[]
+            loccodes = []
             for ch in sta:
                 for cc in channel_codes:
-                  if re.match(cc,ch.code):
+                  if re.match(cc, ch.code):
                     if not ch.location_code in loccodes:
                       loccodes.append(ch.location_code)
             for loc in loccodes:
-                print(sta.code,network,loc,sta.latitude,sta.longitude,sta.elevation)
-                station=tt_stations_1D.Station1D(sta.code,network,loc,sta.latitude,sta.longitude,sta.elevation)
+                print(
+                    sta.code, network, loc, sta.latitude, sta.longitude,
+                    sta.elevation)
+                station = tt_stations_1D.Station1D(
+                    sta.code, network, loc, sta.latitude,
+                    sta.longitude, sta.elevation)
                 tt_session.add(station)
             tt_session.commit()
 
     # Now we have to build our traveltime lookup tables
     # We will use IASP91 here but obspy.taup does let you build your own model
-    velmod=taup.TauPyModel(model='iasp91')
+    velmod = taup.TauPyModel(model='iasp91')
     #delta_distance=1. # km for spacing tt calculations  
-    distance_km=np.arange(0,maxdist+delta_distance,delta_distance)
+    distance_km = np.arange(0, maxdist + delta_distance, delta_distance)
     for d_km in distance_km:
-        d_deg=geodetics.kilometer2degrees(d_km)
-        ptimes=[]
-        stimes=[]
-        p_arrivals=velmod.get_travel_times(source_depth_in_km=source_depth,
-          distance_in_degree=d_deg,phase_list=['P','p'])
+        d_deg = geodetics.kilometer2degrees(d_km)
+        ptimes = []
+        stimes = []
+        p_arrivals = velmod.get_travel_times(
+            source_depth_in_km=source_depth, distance_in_degree=d_deg,
+            phase_list=['P','p'])
         for p in p_arrivals:
             ptimes.append(p.time)
-        s_arrivals=velmod.get_travel_times(source_depth_in_km=source_depth,
-            distance_in_degree=d_deg,phase_list=['S','s'])
+        s_arrivals = velmod.get_travel_times(
+            source_depth_in_km=source_depth, distance_in_degree=d_deg,
+            phase_list=['S','s'])
         for s in s_arrivals:
             stimes.append(s.time)
-        tt_entry=tt_stations_1D.TTtable1D(d_km,d_deg,np.min(ptimes),np.min(stimes),np.min(stimes)-np.min(ptimes))
+        tt_entry = tt_stations_1D.TTtable1D(
+            d_km, d_deg, np.min(ptimes), np.min(stimes), 
+            np.min(stimes) - np.min(ptimes))
         tt_session.add(tt_entry)
         tt_session.commit() # Probably faster to do the commit outside of loop but oh well
     tt_session.close()
     return inv
 
-
     
-def build_tt_tables_local_directory_ant(dirname=None,project_folder=None,channel_codes=['EH','BH','HH'],db=None,maxdist=800.,source_depth=5.,delta_distance=1):
+def build_tt_tables_local_directory_ant(
+    dirname=None,
+    project_folder=None,
+    channel_codes=['EH','BH','HH'],
+    db=None,
+    maxdist=800.,
+    source_depth=5.,
+    delta_distance=1
+):
     """ 
     """
     # Create a connection to an sqlalchemy database
@@ -265,7 +309,8 @@ def build_tt_tables_local_directory_ant(dirname=None,project_folder=None,channel
     tt_session=TTSession()
     inv = Inventory()
     dir1a = glob.glob(project_folder+'/'+dirname+'/*xml')
-    m = Basemap(projection='spstere',boundinglat=-60,lon_0=180,resolution='i')
+    m = Basemap(projection='spstere', boundinglat=-60, lon_0=180, 
+                resolution='i')
     
     for file1 in dir1a:
         inv1a = read_inventory(file1)
@@ -386,88 +431,77 @@ def gpd_pick_add(dbsession=None,fileinput=None,inventory=None):
                 dbsession.commit() #
             except:
                 pass
-
-# def gpd_pick_add(dbsession=None,fileinput=None):
-#   filepath = fileinput
-#   with open(filepath) as fp:
-#     line = fp.readline()
-#     cnt = 1
-#     while line:
-#       try:
-#         print("Line {}: {}".format(cnt, line.strip()))
-#         line = fp.readline()
-#         cnt += 1
-#         sta1 = line.split()[1]
-#         chan1 = line.split()[2]
-#         #print(sta1,chan1)
-#         #scnl.station = sta1
-#         net1 = line.split()[0]
-#         scnl = SCNL([sta1,chan1,'OK'])
-#         #print(scnl.channel)
-#         type1 = line.split()[3]
-#         scnl.phase = type1
-#         time1 = UTCDateTime(line.split()[4]).datetime
-#         t_create=datetime.utcnow()
-           
-#         new_pick=tables1D.Pick(scnl,time1,'',10,0.1,t_create)
-#         dbsession.add(new_pick) # Add pick i to the database
-#         dbsession.commit() #
-#       except:
-#         pass
-                
+  
 def get_chan1(stationfile):
-    if len(list(filter(None, stationfile.split('/')[-1].split('.'))))==5:
-        comp = list(filter(None, stationfile.split('/')[-1].split('.')))[3][2]
-    else:
-        comp = list(filter(None, stationfile.split('/')[-1].split('.')))[2][2]
-    return comp
+    return get_chan3(stationfile)[-1]
 
 def get_chan3(stationfile):
-    if len(list(filter(None, stationfile.split('/')[-1].split('.'))))==5:
-        comp3 = list(filter(None, stationfile.split('/')[-1].split('.')))[3][0:3]
-    else:
-        comp3 = list(filter(None, stationfile.split('/')[-1].split('.')))[2][0:3]
-    return comp3
+    fname = os.path.basename(stationfile)
+
+    seed_id, starttime, endtime = os.path.splitext(fname)[0].split("__")
+    network, station, location, channel = seed_id.split('.')
+    return channel
            
-def detection_continuous(dirname=None, project_folder=None, project_code=None, local=True, machine=True, machine_picker=None, single_date=None, latitude=None, longitude=None, max_radius=None):
-#    starting = UTCDateTime(single_date.strftime("%Y")+'-'+single_date.strftime("%m")+'-'+single_date.strftime("%d")+'T00:00:00.0')
-#    stopping = starting + 86430
-    starting = UTCDateTime(single_date.strftime("%Y")+'-'+single_date.strftime("%m")+'-'+single_date.strftime("%d")+'T00:00:00.0')
+def detection_continuous(
+    dirname, 
+    project_folder,
+    project_code, 
+    single_date,
+    local=True, 
+    machine=True, 
+    machine_picker=None, 
+    latitude=None, 
+    longitude=None, 
+    max_radius=None
+):
+    """ 
+    Some docs would be nice wouldn't it!? 
+    
+    
+    """
+    starting = UTCDateTime(single_date.date)
     stopping = starting + 86430
-    dir1 = project_folder+'/'+dirname
-    #print(single_date.strftime("%Y%m%d"))
-    #print(dir1+'/1dassociator_'+project_code+'.db')
-    if os.path.exists(dir1+'/1dassociator_'+project_code+'.db'):
-        os.remove(dir1+'/1dassociator_'+project_code+'.db')
-    db_assoc='sqlite:///'+dir1+'/1dassociator_'+project_code+'.db'    
-#    if os.path.exists(dir1+'/tt_ex_1D_'+project_code+'.db'):
-#        os.remove(dir1+'/tt_ex_1D_'+project_code+'.db')
-#    db_tt='sqlite:///'+dir1+'/tt_ex_1D_'+project_code+'.db' # Traveltime database44.448,longitude=-115.136
-#    print(db_tt)
-#    if local:
-#        inventory = build_tt_tables_local_directory(dirname=dirname,project_folder=project_folder,channel_codes=['EH','BH','HH'],db=db_tt,maxdist=maxdist,source_depth=5.)
-#    else:
-#        inventory = build_tt_tables(lat1=latitude,long1=longitude,maxrad=max_radius,starting=starting, stopping=stopping, channel_codes=['EH','BH','HH'],db=db_tt,maxdist=maxdist,source_depth=5.)
-    engine_assoc=create_engine(db_assoc, echo=False, connect_args={'check_same_thread': False})
+    dir1 = os.path.join(project_folder, dirname)
+
+    db_filename = os.path.join(dir1, f"1dassociator_{project_code}.db")
+    if os.path.exists(db_filename):
+        os.remove(db_filename)
+    db_assoc = f"sqlite:///{db_filename}"    
+
+    engine_assoc = create_engine(
+        db_assoc, echo=False, connect_args={'check_same_thread': False})
     tables1D.Base.metadata.create_all(engine_assoc)
-    Session=sessionmaker(bind=engine_assoc)
-    session=Session()
-    filelist = glob.glob(dir1+'/*mseed') or glob.glob(dir1+'/*SAC')
-    stations = set()
+    Session = sessionmaker(bind=engine_assoc)
+    session = Session()
+
+
+    filelist = (
+        glob.glob(os.path.join(dir1, '*mseed')) or 
+        glob.glob(os.path.join(dir1, '*SAC')))
+    stations = dict()
+
+    # We are assuming that the file is {net}.{sta}.{loc}.{chan}__{start}__{end}.ext
     for file1 in filelist:
-        station = file1.split('.')[1]
-        net = file1.split('.')[0].split('/')[-1]
-        netsta = net+'.'+station
-        print(file1.split('.')[1])
-        stations.add(netsta)
+        fname = os.path.basename(file1)
+
+        seed_id, starttime, endtime = os.path.splitext(fname)[0].split("__")
+        network, station, location, channel = seed_id.split('.')
+        
+        net_sta = f"{network}.{station}"
+        if net_sta not in stations.keys():
+            print(f"Found data for {net_sta}")
+            stations.update({net_sta: [file1]})
+        else:
+            # Just add to the list of data for that station
+            stations[net_sta].append(file1)
+
     #### create infile
     day_strings = []
-    for stationin in stations:
-        station3 = glob.glob(dir1+'/*'+stationin+'.*mseed') or glob.glob(dir1+'/*'+stationin+'.*SAC')
-        station3a = [None,None,None]
-        if len(station3)>3:
+    for stationin, station3 in stations.items():
+        station3a = [None, None, None]
+        if len(station3) > 3:
             #print(station3)
-            ind1 = np.empty((len(station3),1))
+            ind1 = np.empty((len(station3), 1))
             ind1[:] = np.nan
             for idxs, station1 in enumerate(station3):
                 if get_chan3(station1) == 'HHZ':
@@ -497,94 +531,128 @@ def detection_continuous(dirname=None, project_folder=None, project_code=None, l
                 station3a[ind1] = station1
         if any(elem is None for elem in station3a):
             continue
-        day_strings.append((station3a[0]+' '+station3a[1]+' '+station3a[2]))
+        day_strings.append((' '.join(station3a)))
         
     day_string = "\n".join(day_strings)
     
-    with open(dir1+'/dayfile.in', "w") as open_file:
+    infile, outfile = (
+        os.path.join(dir1, 'dayfile.in'), os.path.join(dir1, "gpd_picks.out"))
+    with open(infile, "w") as open_file:
         open_file.write(day_string)
-    infile = dir1+'/dayfile.in'
-    outfile = dir1+'/gpd_picks.out'
-    #gpd_predict.py -V -P -I infile -O outflie
-    #os.system("gpd_predict.py -V -P -I %s -O %s")%(infile, outfile)
-    #gpd_predict(inputfile=infile,outputfile=outfile)
+
     fileinassociate = outfile
     
     if local:
         inv = Inventory()
-        dir1a = glob.glob(project_folder+'/'+dirname+'/*xml')
+        dir1a = glob.glob(os.path.join(project_folder, dirname, '*xml'))
         for file1 in dir1a:
             inv1a = read_inventory(file1)
             inv.networks.extend(inv1a)
     else:
-        fdsnclient=Client()
-        inv=fdsnclient.get_stations(starttime=starting,endtime=stopping,latitude=latitude,longitude=longitude,maxradius=max_radius,channel='*HZ',level='channel')
+        fdsnclient = Client()
+        inv = fdsnclient.get_stations(
+            starttime=starting, endtime=stopping, latitude=latitude,longitude=longitude, maxradius=max_radius,
+            channel='*HZ', level='channel')
     
-    if machine == True and machine_picker is None:
-        machine_picker = 'GPD'
+    if machine == True:
+        machine_picker = machine_picker or 'GPD'
+
     if machine == True and machine_picker == 'GPD':
-        fullpath1 = pathgpd+'/gpd_predict.py'
-        os.system(fullpath1+" -V -P -I %s -O %s -F %s" % (infile, outfile, pathgpd))
-        gpd_pick_add(dbsession=session,fileinput=fileinassociate,inventory=inv)
+        fullpath1 = pathgpd + '/gpd_predict.py'
+        os.system(fullpath1 +" -V -P -I %s -O %s -F %s" % 
+            (infile, outfile, pathgpd))
+        gpd_pick_add(
+            dbsession=session, fileinput=fileinassociate, inventory=inv)
     elif machine == True and machine_picker == 'EQTransformer':
-        fullpath2 = pathEQT+'/mseed_predictor.py'
-        os.system(fullpath2+" -I %s -O %s -F %s" % (infile, outfile, pathEQT))
-        gpd_pick_add(dbsession=session,fileinput=fileinassociate,inventory=inv)
+        fullpath2 = pathEQT + '/mseed_predictor.py'
+        os.system(fullpath2 + " -I %s -O %s -F %s" % (infile, outfile, pathEQT))
+        gpd_pick_add(
+            dbsession=session, fileinput=fileinassociate, inventory=inv)
     else:
         picker = fbpicker.FBPicker(t_long = 5, freqmin = 1, mode = 'rms', t_ma = 20, nsigma = 7, t_up = 0.7, nr_len = 2, nr_coeff = 2, pol_len = 10, pol_coeff = 10, uncert_coeff = 3)
         fb_pick(dbengine=engine_assoc,picker=picker,fileinput=infile)
 
-def association_continuous(dirname=None, project_folder=None, project_code=None, maxdist = None, maxkm=None, single_date=None, local=True, nsta_declare=4, delta_distance=1, latitude=None, longitude=None, max_radius=None):
-    starting = UTCDateTime(single_date.strftime("%Y")+'-'+single_date.strftime("%m")+'-'+single_date.strftime("%d")+'T00:00:00.0')
-    stopping = starting + 86430
+def association_continuous(
+    dirname=None, 
+    project_folder=None, 
+    project_code=None, 
+    maxdist=None, 
+    maxkm=None, 
+    single_date=None, 
+    local=True, 
+    nsta_declare=4, 
+    delta_distance=1, 
+    latitude=None, 
+    longitude=None, 
+    max_radius=None
+):
+    """ Where are the docs?! """
 
-    dir1 = project_folder+'/'+dirname
-    print(single_date.strftime("%Y%m%d"))
-    #print(dir1+'/1dassociator_'+project_code+'.db')
-#    if os.path.exists(dir1+'/1dassociator_'+project_code+'.db'):
-#        os.remove(dir1+'/1dassociator_'+project_code+'.db')
-#    db_assoc='sqlite:///'+dir1+'/1dassociator_'+project_code+'.db'    
-    if os.path.exists(dir1+'/tt_ex_1D_'+project_code+'.db'):
-        os.remove(dir1+'/tt_ex_1D_'+project_code+'.db')
-    db_tt='sqlite:///'+dir1+'/tt_ex_1D_'+project_code+'.db' # Traveltime database44.448,longitude=-115.136
+    starting = UTCDateTime(single_date.date)
+    stopping = starting + 86430
+    dir1 = os.path.join(project_folder, dirname)
+
+    print(f"Associating for {single_date.strftime('%Y%m%d')}")
+    
+    db_tt = os.path.join(dir1, f"tt_ex_1D_{project_code}.db")
+    if os.path.isfile(db_tt):
+        os.remove(db_tt)
+    
+    db_tt = f"sqlite:///{db_tt}"  # Travel time database
+
     print(db_tt)
     if local:
-        inventory = build_tt_tables_local_directory(dirname=dirname,project_folder=project_folder,channel_codes=['EH','BH','HH'],db=db_tt,maxdist=maxdist,source_depth=5., delta_distance=delta_distance)
+        inventory = build_tt_tables_local_directory(
+            dirname=dirname, project_folder=project_folder,
+            channel_codes=['EH','BH','HH'], # TODO: These probably shouln't be hard coded!!!
+            db=db_tt, maxdist=maxdist, source_depth=5., 
+            delta_distance=delta_distance)
     else:
-        inventory = build_tt_tables(lat1=latitude,long1=longitude,maxrad=max_radius,starting=starting, stopping=stopping, channel_codes=['EH','BH','HH'],db=db_tt,maxdist=maxdist,source_depth=5., delta_distance=delta_distance)
-    inventory.write(dir1+'/dailyinventory.xml',format="STATIONXML")
-    if not os.path.exists(dir1+'/1dassociator_'+project_code+'.db'):
-        db_assoc='sqlite:///'+dir1+'/1dassociator_'+project_code+'.db'
-        engine_assoc=create_engine(db_assoc, echo=False, connect_args={'check_same_thread': False})
+        inventory = build_tt_tables(
+            lat1=latitude, long1=longitude, maxrad=max_radius,
+            starting=starting, stopping=stopping, 
+            channel_codes=['EH','BH','HH'], # TODO - hard coded?
+            db=db_tt, maxdist=maxdist, source_depth=5., 
+            delta_distance=delta_distance)
+    
+    inventory.write(
+        os.path.join(dir1, 'dailyinventory.xml'), format="STATIONXML")
+    
+    pick_db = os.path.join(dir1, f'1dassociator_{project_code}.db')
+    db_assoc = f'sqlite:///{pick_db}'
+    if not os.path.exists(pick_db):
+        engine_assoc = create_engine(
+            db_assoc, echo=False, connect_args={'check_same_thread': False})
         tables1D.Base.metadata.create_all(engine_assoc)
-        Session=sessionmaker(bind=engine_assoc)
-        session=Session()
-        gpd_pick_add(dbsession=session,fileinput=dir1+'/gpd_picks.out',inventory=inventory)
+        Session = sessionmaker(bind=engine_assoc)
+        session = Session()
+        gpd_pick_add(
+            dbsession=session,fileinput=os.path.join(dir1, 'gpd_picks.out'),
+            inventory=inventory)
 
-    db_assoc='sqlite:///'+dir1+'/1dassociator_'+project_code+'.db'
-    assocXX=assoc1D.LocalAssociator(db_assoc, db_tt, max_km = maxkm, aggregation = 1, aggr_norm = 'L2', cutoff_outlier = 10, assoc_ot_uncert = 3, nsta_declare = nsta_declare, loc_uncert_thresh = 0.2)
-    print("aggregate")
-    t0=datetime.utcnow()
-      # Identify candidate events (Pick Aggregation)
+    assocXX = assoc1D.LocalAssociator(
+        db_assoc, db_tt, max_km=maxkm, aggregation=1, aggr_norm='L2', 
+        cutoff_outlier=10, assoc_ot_uncert=3, nsta_declare=nsta_declare, 
+        loc_uncert_thresh=0.2)
+    print("Aggregate")
+    tic = time.perf_counter()
+    # Identify candidate events (Pick Aggregation)
     assocXX.id_candidate_events()
-    t1=datetime.utcnow()
-    print('Took '+str(t1-t0))
-    print("associate")
-      # Associate events
+    toc = time.perf_counter()
+    print(f'Took {toc - tic:.3f}s')
+    print("Associate")
+    # Associate events
     assocXX.associate_candidates()
-    t2=datetime.utcnow()
-    print('Took '+str(t2-t1))
+    toc2 = time.perf_counter()
+    print(f'Took {toc2 - toc:.3f}s')
       # Add singles stations to events
     try:
         assocXX.single_phase()
     except:
         pass
+    return
     
     
-
-
-
-
 def create_connection(db_file):
     """ create a database connection to the SQLite database
         specified by the db_file
@@ -600,8 +668,14 @@ def create_connection(db_file):
     return None
 
 
+def hypo_station(
+    project_folder=None,
+    project_code=None, 
+    catalog_year=None, 
+    year=None
+):
+    """ Docs here. """
 
-def hypo_station(project_folder=None, project_code=None, catalog_year=None, year=None):
     hypo71_string_sta = ""
     station_strings = []
     f1 = open(project_folder+'/'+'sta','w')
@@ -668,9 +742,6 @@ def hypo_station(project_folder=None, project_code=None, catalog_year=None, year
         open_file.write(station_string)
     f1.write(str(hypo71_string_sta))
     f1.close()
-
-
-
 
  
 def select_all_associated(conn, f0):
@@ -755,12 +826,6 @@ def select_all_associated(conn, f0):
                     numP = num
                 if states in line and 'S' in line:
                     numS = num
-#            if numP > -1 and numS < -1:
-#                #print('just P'+str(numP))
-#            if numP < -1 and numS > -1:
-#                #print('just S')
-#            if numP > -1 and numS > -1:
-#                print('both'+str(numP)+' '+str(numS))
             if len(states)>4:
                 sta = states[1:]
             else:
@@ -826,18 +891,28 @@ def select_all_associated(conn, f0):
             
     return dfs1, stalistall, cat1, f0
 
-def combine_associated(project_folder=None, project_code=None, catalog_year=False, year=None, hypoflag=False, eventmode=False):
-    #files = sorted(glob.glob('/data/tx/ContWaveform/*/1dass*'++'.db'))
-    #files = [f for f in os.listdir(dirdata) if os.path.isfile(os.path.join(dirdata, f))]
-    #dir1 = project_folder+'/'+dirname
+def combine_associated(
+    project_folder=None, 
+    project_code=None, 
+    catalog_year=False, 
+    year=None, 
+    hypoflag=False, 
+    eventmode=False
+):
+    """ Docs here. """
     
     hypo_station(project_folder, project_code)
-    files = sorted(glob.glob(project_folder+'/*/1dass*'+project_code+'.db'))
+    files = sorted(
+        glob.glob(os.path.join(project_folder, '*', f'1dass*{project_code}.db')
+    ))
     if catalog_year:
-        files = sorted(glob.glob(project_folder+'/'+str(year)+'*/1dass*'+project_code+'.db'))
+        files = sorted(
+            glob.glob(os.path.join(
+                project_folder, f'{year}', '*', f'1dass*{project_code}.db')))
     if eventmode:
-        files = sorted(glob.glob(project_folder+'/1dass*'+project_code+'.db'))
-    f0 = open(project_folder+'/pha_'+project_code,'w')
+        files = sorted(glob.glob(os.path.join(
+            project_folder, f'1dass*{project_code}.db')))
+    f0 = open(project_folder+'/pha_'+project_code, 'w')
     dfs2 = pd.DataFrame()
     stalistall1 = []
     cat = Catalog()
@@ -847,13 +922,8 @@ def combine_associated(project_folder=None, project_code=None, catalog_year=Fals
         conn = create_connection(dfile)
         
         with conn:
-            #print("1. Query task by priority:")
-            #select_task_by_priority(conn,1)
-         
-            #print('Day '+dfile[-6:-3])
-            #try:
                 
-            dfs1,stalistall,cat1,f0 = select_all_associated(conn, f0)
+            dfs1, stalistall, cat1, f0 = select_all_associated(conn, f0)
             cat.extend(cat1)
             for stas1 in stalistall:
                 if stas1 not in stalistall1:

@@ -35,7 +35,7 @@ This code leverages machine-learning for earthquake detection with the choice of
 ```
 conda create -n easyquake python=3.7 anaconda
 conda activate easyquake
-conda install tensorflow-gpu==2.1
+conda install tensorflow-gpu==2.1 tqdm
 conda install keras
 conda install obspy -c conda-forge
 pip install easyQuake
