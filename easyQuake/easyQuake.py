@@ -40,7 +40,7 @@ from sqlalchemy import create_engine
 import pandas as pd
 import sqlite3
 from sqlite3 import Error
-from obspy.geodetics import gps2dist_azimuth
+from obspy.geodetics import gps2dist_azimuth, kilometer2degrees
 
 import pylab as plt
 import re
@@ -1645,6 +1645,11 @@ def plot_hypodd_catalog(file=None):
 
 
 def locate_hyp2000(cat=None, project_folder=None, vel_model=None):
+    if vel_model is None:
+        velmodel = pathhyp+'/standard.crh'
+        os.system("cp %s %s" % (velmodel,project_folder))
+        vel_model = 'standard.crh'
+
     for idx1, event in enumerate(cat):
         origin = event.preferred_origin() or event.origins[0]
         stas = []
@@ -1722,12 +1727,6 @@ def locate_hyp2000(cat=None, project_folder=None, vel_model=None):
         try:
             if os.path.exists(project_folder+'/out.sum'):
                 os.system('rm '+project_folder+'/out.sum')
-            if vel_model is None:
-                velmodel = pathhyp+'/standard.crh'
-                os.system("cp %s %s" % (velmodel,project_folder))
-                #os.system("cat %s/run.hyp | hyp2000" % (project_folder))
-                vel_model = 'standard.crh'
-                #os.system("mv %s %s" % (original1,mseed1))
         except:
             pass
         fcur = open(project_folder+'/pha','w')
@@ -1752,6 +1751,8 @@ def locate_hyp2000(cat=None, project_folder=None, vel_model=None):
         frun.write('jun t')
         frun.write("\n")
         frun.write('min 4')
+        frun.write("\n")
+        frun.write('prt out.prt')
         frun.write("\n")
         frun.write('fil')
         frun.write("\n")
@@ -1819,7 +1820,74 @@ def locate_hyp2000(cat=None, project_folder=None, vel_model=None):
                 o.earth_model_id = "smi:local/earth_model/%s" % (model)
                 o.time = time
                 o.resource_id = ResourceIdentifier(id='smi:local/Origin/hyp2000location_1')
-                o.arrivals = origin.arrivals
+                #o.arrivals = origin.arrivals
+                lines = open(project_folder+'/out.prt').readlines()
+                while True:
+                    try:
+                        line = lines.pop(0)
+                    except:
+                        break
+                    if line.startswith(" STA NET COM L CR DIST AZM"):
+                        break
+                for i in range(len(lines)):
+                # check which type of phase
+                    if lines[i][32] == "P":
+                        type = "P"
+                    elif lines[i][32] == "S":
+                        type = "S"
+                    else:
+                        continue
+                    # get values from line
+                    station = lines[i][0:6].strip()
+                    if station == "":
+                        station = lines[i-1][0:6].strip()
+                        distance = float(lines[i-1][18:23])
+                        azimuth = int(lines[i-1][23:26])
+                        incident = int(lines[i-1][27:30])
+                    else:
+                        station = station
+                        distance = float(lines[i][18:23])
+                        azimuth = int(lines[i][23:26])
+                        incident = int(lines[i][27:30])
+                    if lines[i][31] == "I":
+                        onset = "impulsive"
+                    elif lines[i][31] == "E":
+                        onset = "emergent"
+                    else:
+                        onset = None
+                    if lines[i][33] == "U":
+                        polarity = "positive"
+                    elif lines[i][33] == "D":
+                        polarity = "negative"
+                    else:
+                        polarity = None
+                    res = float(lines[i][61:66])
+                    weight = float(lines[i][68:72])
+                    phase_hint = type
+                    for p in event.picks:
+                        if station is not None and station != p.waveform_id.station_code:
+                            continue
+                        if phase_hint is not None and phase_hint != p.phase_hint:
+                            continue
+                        pickid = p
+                    arrival = Arrival(origin=o, pick=pickid)
+                    arrival.time_residual = res
+                    arrival.azimuth = azimuth
+                    arrival.distance = kilometer2degrees(distance)
+                    arrival.takeoff_angle = incident
+                    if onset and not pickid.onset:
+                        pickid.onset = onset
+                    if polarity and not pick.polarity:
+                        pickid.polarity = polarity
+                    # we use weights 0,1,2,3 but hypo2000 outputs floats...
+                    arrival.time_weight = weight
+                    arrival.pick_id = pickid.resource_id
+                    o.arrivals.append(arrival)
+                    #o.quality.used_phase_count += 1
+
+                    #print(type, station, distance, azimuth, incident, res, weight)
+
+
             event.origins.append(o)
             event.preferred_origin_id = o.resource_id
         except:
